@@ -7,6 +7,8 @@ use App\User;
 use Validator;
 use App\Contact;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Session;
+
 use Illuminate\Http\Request;
 
 class HomeController extends Controller
@@ -18,18 +20,61 @@ class HomeController extends Controller
      */
     public function __construct()
     {
-        //$this->middleware('auth');
+
     }
 
-    /**
-     * Show the application dashboard.
-     *
-     * @return \Illuminate\Http\Response
-     */
+
+    public function home()
+    {
+        return view('layouts.app');
+    }
+
+
+    public function login(Request $request)
+    {
+        if(Auth::attempt(['email' => request('email') ,  'password' => request('password')]))
+        {
+            $user = Auth::user();
+            $success['token'] = $user->createToken('freework')->accessToken;
+            return response()->json(['success' => $success] , 200);
+        }
+
+        return response()->json(['error' => 'Failed To Login'] , 401);
+
+    }
+
+
+    protected function guard()
+    {
+        return Auth::guard('api');
+    }
+
+
+    public function logout(Request $request)
+    {
+        if(!$this->guard()->check())
+        {
+            return response()->json(['message' => 'No user session was found'] , 404);
+        }
+
+        $request->user('api')->token()->revoke();
+
+        Auth::guard()->logout();
+
+        Session::flush();
+
+        Session::regenerate();
+
+        return response()->json(['message' => 'User Logged Out Successfully'] , 200);
+        
+    }
+
+
+
     public function index()
     {
         $jobs = Job::where('approved' , 1)->paginate(10);
-        return view('home' , compact('jobs'));
+        return response()->json(['jobs' => $jobs] , 200);
     }
 
 
@@ -40,7 +85,7 @@ class HomeController extends Controller
 
         if($job->approved != 1)
         {
-            return abort(404);
+            return response()->json(['error' => 'unauthorized'] , 401);
         }
 
         if(Req::where(['freelancer_id' => Auth::id() , 'job_id' => $id , 'status' => 0 ])->exists() || Req::where(['freelancer_id' => Auth::id() , 'job_id' => $id , 'status' => 2 ])->exists())
@@ -71,7 +116,7 @@ class HomeController extends Controller
         }
 
 
-        return view('jobdetails' , compact('job' , 'button' , 'jobclosed' , 'yourjob'));
+        return response()->json(['job' => $job , 'button' => $button , 'jobclosed' => $jobclosed , 'yourjob' => $yourjob] , 200);
     }
 
 
@@ -81,24 +126,12 @@ class HomeController extends Controller
         $user = User::find($id);
         if($user->hasRole('admin'))
         {
-            return abort(404);
+            return response()->json(['error' => 'unauthorized'] , 401);
         }
-        return view('userdetails' , compact('user'));
+        return response()->json(['user' => $user] , 200);
     }
 
 
-    public function about()
-    {
-        return view('about');
-    }
-
-
-
-
-    public function contact()
-    {
-        return view('contact');
-    }
 
 
     public function store_contact(Request $request)
@@ -120,10 +153,7 @@ class HomeController extends Controller
 
         if($validator->fails())
         {
-            return redirect()
-            ->back()
-            ->withErrors($validator)
-            ->withInput();
+            return response()->json(['errors' => $validator->errors()] , 400);
         }
 
         if(Auth::user())
@@ -144,8 +174,7 @@ class HomeController extends Controller
             $contact->save();
         }
 
-        $request->session()->flash('status' , 'You\'re message has been sent ' );
-        return redirect()->back();
+        return response()->json(['message' => 'contact created'] , 200);
     }
 
 

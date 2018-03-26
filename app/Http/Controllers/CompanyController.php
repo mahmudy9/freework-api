@@ -14,14 +14,7 @@ class CompanyController extends Controller
 {
     public function __construct()
     {
-        $this->middleware(['auth' , 'Company']);
-    }
-
-
-
-    public function register()
-    {
-        return view('company.register');
+        $this->middleware(['auth:api' , 'Company'])->except(['store_register']);
     }
 
 
@@ -30,17 +23,15 @@ class CompanyController extends Controller
         $validator = Validator::make($request->all() , [
             'email' => 'email|required|unique:users,email',
             'name' => 'required|min:3|max:100',
-            'password' => 'required|min:6|max:100|confirmed',
+            'password' => 'required|min:6|max:100',
+            'c_password' => 'required|same:password',
             'address' => 'required|min:8|max:200',
             'city' => 'required|min:5|max:100',
-            'phone' => 'required|min:9|max:100|numeric'
+            'phone' => 'required|min:9|max:100'
         ]);
         if($validator->fails())
         {
-            return redirect()
-            ->back()
-            ->withErrors($validator)
-            ->withInput();
+            return response()->json(['errors' => $validator->errors()] , 400);
         }
         $role_company = Role::where('name' , 'company')->first();
         $company = new User;
@@ -52,8 +43,9 @@ class CompanyController extends Controller
         $company->city = $request->input('city');
         $company->save();
         $company->roles()->attach($role_company);
-        $request->session()->flash('status' , 'You are now registered, You may now sign in');
-        return redirect()->back();
+        $success['token'] = $company->createToken('freework')->accessToken;
+        $success['name'] = $company->name;
+        return response()->json(['success' => $success] , 200);
     }
 
 
@@ -62,34 +54,34 @@ class CompanyController extends Controller
     {
         if(Req::where([ 'job_id' => $id , 'freelancer_id' => Auth::id()])->exists())
         {
-            return response()->json([] , 400);
+            return response()->json(['error' => 'You already requested for this job'] , 400);
         }
         $request = new Req;
         $request->freelancer_id = Auth::id();
         $request->job_id = $id;
         $request->save();
-        return response()->json([] , 200);
+        return response()->json(['request' => $request] , 200);
     }
 
 
     public function my_requests()
     {
         $requests = Req::where(['freelancer_id' => Auth::id() , 'status' => 0])->paginate(15);
-        return view('company.myrequests' , compact('requests'));
+        return response()->json(['requests' => $requests] , 200);
     }
 
 
     public function accepted_requests()
     {
         $requests = Req::where(['freelancer_id' => Auth::id() , 'status' => 1])->paginate(15);
-        return view('company.acceptedrequests' , compact('requests'));
+        return response()->json(['requests' => $requests] , 200);
     }
 
 
     public function refused_requests()
     {
         $requests = Req::where(['freelancer_id' => Auth::id() , 'status' => 2])->paginate(15);
-        return view('company.refusedrequests' , compact('requests'));
+        return response()->json(['requests' => $requests] , 200);
     }
 
 
@@ -98,18 +90,18 @@ class CompanyController extends Controller
         $request = Req::where(['freelancer_id' => Auth::id() , 'job_id' => $id])->first();
         if($request->status == 1 || $request->status == 2)
         {
-            return response()->json([] , 404);
+            return response()->json(['error' => 'cant delete request'] , 400);
         }
 
         $request->delete();
-        return response()->json(['request deleted'] , 200);
+        return response()->json(['message' => 'request deleted'] , 200);
     }
 
 
     public function edit_profile()
     {
         $company = User::find(Auth::id());
-        return view('company.editprofile' , compact('company'));
+        return response()->json(['company' => $company] , 200);
     }
 
     public function update_profile(Request $request)
@@ -123,9 +115,7 @@ class CompanyController extends Controller
         ]);
         if($validator->fails())
         {
-            return redirect()
-            ->back()
-            ->withErrors($validator);
+            return response()->json(['errors' => $validator->errors()] , 400);
         }
         $company = User::find(Auth::id());
         $company->name = $request->input('name');
@@ -134,8 +124,7 @@ class CompanyController extends Controller
         $company->phone = $request->input('phone');
         $company->city = $request->input('city');
         $company->save();
-        $request->session()->flash('status' , 'your data has been updated');
-        return redirect()->back();
+        return response()->json(['company' => $company] , 200);
 
     }
 

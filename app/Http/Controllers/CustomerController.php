@@ -16,16 +16,8 @@ class CustomerController extends Controller
     
     public function __construct()
     {
-        $this->middleware(['auth' , 'Customer']);
+        $this->middleware(['auth:api' , 'Customer'])->except(['store_register']);
     }
-
-
-
-    public function register()
-    {
-        return view('customer.register');
-    }
-
 
 
     public function store_register(Request $request)
@@ -33,17 +25,15 @@ class CustomerController extends Controller
         $validator = Validator::make($request->all() , [
             'email' => 'email|required|unique:users,email',
             'name' => 'required|min:3|max:100',
-            'password' => 'required|min:6|max:100|confirmed',
+            'password' => 'required|min:6|max:100',
+            'c_password' => 'required|same:password',
             'address' => 'required|min:8|max:200',
             'city' => 'required|min:5|max:100',
-            'phone' => 'required|min:9|max:100|numeric'
+            'phone' => 'required|min:9|max:100'
         ]);
         if($validator->fails())
         {
-            return redirect()
-            ->back()
-            ->withErrors($validator)
-            ->withInput();
+            return response()->json(['errors' => $validator->errors()] , 400);
         }
         $role_customer = Role::where('name' , 'customer')->first();
         $customer = new User;
@@ -55,14 +45,10 @@ class CustomerController extends Controller
         $customer->city = $request->input('city');
         $customer->save();
         $customer->roles()->attach($role_customer);
-        $request->session()->flash('status' , 'You are now registered, You may now sign in');
-        return redirect()->back();
-    }
+        $success['token'] = $customer->createToken('freework')->accessToken;
+        $success['name'] = $customer->name;
+        return response()->json(['success' => $success] , 200);
 
-
-    public function add_job()
-    {
-        return view('customer.addjob');
     }
 
 
@@ -84,10 +70,7 @@ class CustomerController extends Controller
 
         if($validator->fails())
         {
-            return redirect()
-            ->back()
-            ->withErrors($validator)
-            ->withInput();
+            return response()->json(['errors' => $validator->errors()] , 400);
         }
 
         $job = new Job;
@@ -97,8 +80,7 @@ class CustomerController extends Controller
         $job->description = $request->input('description');
         $job->phone = $request->input('phone');
         $job->save();
-        $request->session()->flash('status' , 'Job created and you can edit or delete job');
-        return redirect()->back();
+        return response()->json(['job' => $job] , 201);
     }
 
 
@@ -116,13 +98,13 @@ class CustomerController extends Controller
         {
             if($req->status == 1)
             {
-                return response()->json([] , 400);
+                return response()->json(['message' => 'cant delete job'] , 403);
  
             }
         }
         $job->delete();
         $requests->delete();
-        return response()->json([] , 200);
+        return response()->json(['message' => 'job deleted'] , 200);
     }
 
     public function edit_job($id)
@@ -131,9 +113,9 @@ class CustomerController extends Controller
     
         if($job->user_id != Auth::id())
         {
-            return abort(404);
+            return response()->json(['message' => 'unauthorized to edit job'] , 401);
         }
-        return view('customer.editjob' , compact('job'));
+        return response()->json(['job' => $job] , 200);
     }
 
     public function update_job(Request $request)
@@ -159,9 +141,7 @@ class CustomerController extends Controller
 
         if($validator->fails())
         {
-            return redirect()
-            ->back()
-            ->withErrors($validator);
+            return response()->json(['errors' => $validator->errors()] , 400);
         }
 
         $job->title = $request->input('title');
@@ -172,8 +152,7 @@ class CustomerController extends Controller
             $job->image = $file;
         }
         $job->save();
-        $request->session()->flash('status' , 'Job Has Been Updated');
-        return redirect()->back();
+        return response()->json(['job' => $job] , 200);
     }
 
 
@@ -184,12 +163,12 @@ class CustomerController extends Controller
         $job = Job::find($job_id);
         if($job->user_id != Auth::id())
         {
-            return abort(404);
+            return response()->json(['error' => 'unaithorized to accept request'] , 401);
         }
         //status = 1 means accepted
         $req->status = 1;
         $req->save();
-        return redirect()->back();
+        return response()->json(['req' => $req] , 200);
     }
 
 
@@ -200,12 +179,12 @@ class CustomerController extends Controller
         $job = Job::find($job_id);
         if($job->user_id != Auth::id())
         {
-            return response()->json([] , 404);
+            return response()->json(['error' => 'unauthorized to refuse request'] , 401);
         }
         //status = 2 means its refused
         $req->status = 2;
         $req->save();
-        return response()->json([] , 200);
+        return response()->json(['message' => 'request refused'] , 200);
 
     }
 
@@ -217,18 +196,18 @@ class CustomerController extends Controller
         $job = Job::find($job_id);
         if($job->user_id != Auth::id())
         {
-            return abort(404);
+            return response()->json(['error' => 'unauthorized to do this action'] , 401);
         }
         $request->status = 2;
         $request->save();
-        return redirect()->back();
+        return response()->json(['success' => 'Request undoed'] , 200);
     }
 
 
     public function myjobs()
     {
         $jobs = Job::where('user_id' , Auth::id())->latest()->paginate(10);
-        return view('customer.myjobs' , compact('jobs'));
+        return response()->json(['jobs' => $jobs] , 200);
     }
 
 
@@ -238,13 +217,13 @@ class CustomerController extends Controller
         $job = Job::find($id);
         if($job->user_id != Auth::id())
         {
-            return abort(404);
+            return response()->json(['error' => 'unauthorized'] , 401);
         }
 
         if(Req::where(['job_id' => $id , 'status' => 1 ])->exists())
         {
             $res = 0;
-            $req = Req::where(['job_id' => $id , 'status' => 1])->first();
+            $acceptedreq = Req::where(['job_id' => $id , 'status' => 1])->first();
         }
         else
         {
@@ -252,7 +231,7 @@ class CustomerController extends Controller
         }
         $requests = Req::where(['job_id' => $id , 'status' => 0 ])->paginate('10');
 
-        return view('customer.job' , compact('job' , 'requests' , 'req' ,'res'));
+        return response()->json(['job' => $job , 'requests' => $requests , 'acceptedreq' => $acceptedreq , 'res' => $res] , 200);
     }
 
 
@@ -261,18 +240,18 @@ class CustomerController extends Controller
         $job = Job::find($id);
         if($job->user_id != Auth::id())
         {
-            return abort(404);
+            return response()->json(['error' => 'unauthorized'] , 401);
         }
 
         $requests = Req::where('job_id' , $id)->get();
-        return view('customer.jobrequests' , compact('requests'));
+        return response()->json(['requests' => $requests] , 200);
     }
 
 
         public function edit_profile()
     {
         $customer = User::find(Auth::id());
-        return view('customer.editprofile' , compact('customer'));
+        return response()->json(['customer' => $customer] , 200);
     }
 
     public function update_profile(Request $request )
@@ -286,9 +265,7 @@ class CustomerController extends Controller
         ]);
         if($validator->fails())
         {
-            return redirect()
-            ->back()
-            ->withErrors($validator);
+            return response()->json(['errors' => $validator->errors()] , 400);
         }
         $customer = User::find(Auth::id());
         $customer->name = $request->input('name');
@@ -297,8 +274,7 @@ class CustomerController extends Controller
         $customer->phone = $request->input('phone');
         $customer->city = $request->input('city');
         $customer->save();
-        $request->session()->flash('status' , 'your data has been updated');
-        return redirect()->back();
+        return response()->json(['customer' => $customer] , 200);
 
     }
  
